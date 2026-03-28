@@ -1,4 +1,3 @@
-
 exports.handler = async function(event) {
 
   if (event.httpMethod !== 'POST') {
@@ -15,13 +14,15 @@ exports.handler = async function(event) {
     )
     const symbols = await symbolsRes.json()
 
-    // Take first 200 symbols to screen — avoid rate limits
+    // Take first 200 symbols to screen
     const sample = symbols.slice(0, 200)
 
-    // Step 2 — Fetch quote for each stock
+    // Step 2 — Fetch data for each stock
     const results = []
+
     for (const stock of sample) {
       try {
+
         // Get current price quote
         const quoteRes = await fetch(
           'https://finnhub.io/api/v1/quote?symbol=' + stock.symbol +
@@ -36,23 +37,31 @@ exports.handler = async function(event) {
         )
         const profile = await profileRes.json()
 
-        const price = quote.c          // current price
-        const volume = quote.v         // volume
-        const cap = profile.marketCapitalization  // market cap in millions
+        // Get basic financials for 52W high/low, P/E, book value
+        const finRes = await fetch(
+          'https://finnhub.io/api/v1/stock/metric?symbol=' + stock.symbol +
+          '&metric=all&token=' + process.env.FINNHUB_API_KEY
+        )
+        const fin = await finRes.json()
+        const metrics = fin.metric || {}
+
+        const price = quote.c
+        const volume = quote.v
+        const cap = profile.marketCapitalization
         const sector = profile.finnhubIndustry || 'Unknown'
 
-        // Skip if missing data
+        // Skip if missing price data
         if (!price || price <= 0) continue
 
-        // Apply filters
+        // Apply price filter
         if (price > maxPrice) continue
 
-        // Market cap filter
+        // Apply market cap filter
         if (marketCap === 'small' && cap >= 2000) continue
         if (marketCap === 'mid' && (cap < 2000 || cap >= 10000)) continue
         if (marketCap === 'large' && cap < 10000) continue
 
-        // Volume filter
+        // Apply volume filter
         if (minVolume === '100k' && volume < 100000) continue
         if (minVolume === '500k' && volume < 500000) continue
         if (minVolume === '1m' && volume < 1000000) continue
@@ -64,7 +73,11 @@ exports.handler = async function(event) {
           price: price,
           marketCap: cap,
           volume: volume,
-          sector: sector
+          sector: sector,
+          week52High: metrics['52WeekHigh'] || null,
+          week52Low: metrics['52WeekLow'] || null,
+          peRatio: metrics['peBasicExclExtraTTM'] || null,
+          bookValue: metrics['bookValuePerShareQuarterly'] || null
         })
 
         // Stop once we have 25 results

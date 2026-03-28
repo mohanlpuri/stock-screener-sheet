@@ -14,7 +14,7 @@
     }
 
     .app {
-      max-width: 1100px;
+      max-width: 1200px;
       margin: 40px auto;
       padding: 1.5rem 1.25rem;
       background: white;
@@ -165,6 +165,7 @@
       padding: 10px 14px;
       border-bottom: 1px solid #e8e8e8;
       vertical-align: middle;
+      white-space: nowrap;
     }
 
     tr:last-child td { border-bottom: none; }
@@ -177,11 +178,7 @@
       color: #185FA5;
     }
 
-    .price {
-      font-weight: 600;
-      color: #1a1a1a;
-    }
-
+    .price { font-weight: 600; color: #1a1a1a; }
     .cap { color: #555; }
 
     .badge {
@@ -217,17 +214,13 @@
     }
 
     /* Summary panel */
-    .summary-panel {
-      background: #f7f7f7;
-      border-top: 2px solid #e0e0e0;
-    }
-
     .summary-panel td {
       padding: 12px 16px;
       font-size: 13px;
       color: #333;
       line-height: 1.6;
-      border-bottom: none;
+      background: #f7f7f7;
+      border-top: 1px solid #e0e0e0;
     }
 
     .summary-loading {
@@ -288,23 +281,19 @@
 
   <script>
 
-    // Detects if running locally or on Netlify
     const IS_LOCAL = window.location.protocol === 'file:'
                   || window.location.hostname === 'localhost'
                   || window.location.hostname === '127.0.0.1'
 
-    // Local keys — only used when testing locally
     const LOCAL_FINNHUB_KEY = 'YOUR-FINNHUB-KEY-HERE'
     const LOCAL_ANTHROPIC_KEY = 'YOUR-ANTHROPIC-KEY-HERE'
 
-    // Format market cap nicely — e.g. 1200 → $1.2B
     function formatCap(capInMillions) {
       if (!capInMillions) return 'N/A'
       if (capInMillions >= 1000) return '$' + (capInMillions / 1000).toFixed(1) + 'B'
       return '$' + capInMillions.toFixed(0) + 'M'
     }
 
-    // Format volume nicely — e.g. 1500000 → 1.5M
     function formatVolume(vol) {
       if (!vol) return 'N/A'
       if (vol >= 1000000) return (vol / 1000000).toFixed(1) + 'M'
@@ -312,10 +301,24 @@
       return vol
     }
 
-    // Fetch stocks — switches between local and Netlify
+    function fmt52(low, high) {
+      const l = low ? '$' + low.toFixed(2) : 'N/A'
+      const h = high ? '$' + high.toFixed(2) : 'N/A'
+      return l + ' / ' + h
+    }
+
+    function fmtPE(pe) {
+      if (!pe) return 'N/A'
+      return pe.toFixed(1) + 'x'
+    }
+
+    function fmtBook(bv) {
+      if (!bv) return 'N/A'
+      return '$' + bv.toFixed(2)
+    }
+
     async function fetchStocks(maxPrice, marketCap, minVolume) {
       if (IS_LOCAL) {
-        // Running locally — call Finnhub directly
         const symbolsRes = await fetch(
           'https://finnhub.io/api/v1/stock/symbol?exchange=US&token=' + LOCAL_FINNHUB_KEY
         )
@@ -336,6 +339,13 @@
               '&token=' + LOCAL_FINNHUB_KEY
             )
             const profile = await profileRes.json()
+
+            const finRes = await fetch(
+              'https://finnhub.io/api/v1/stock/metric?symbol=' + stock.symbol +
+              '&metric=all&token=' + LOCAL_FINNHUB_KEY
+            )
+            const fin = await finRes.json()
+            const metrics = fin.metric || {}
 
             const price = quote.c
             const volume = quote.v
@@ -358,7 +368,11 @@
               price: price,
               marketCap: cap,
               volume: volume,
-              sector: sector
+              sector: sector,
+              week52High: metrics['52WeekHigh'] || null,
+              week52Low: metrics['52WeekLow'] || null,
+              peRatio: metrics['peBasicExclExtraTTM'] || null,
+              bookValue: metrics['bookValuePerShareQuarterly'] || null
             })
 
             if (results.length >= 25) break
@@ -368,7 +382,6 @@
         return results
 
       } else {
-        // Running on Netlify — call server function
         const response = await fetch('/.netlify/functions/get-stocks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -379,13 +392,14 @@
       }
     }
 
-    // Get Claude's opinion on a stock
     async function getOpinion(stock) {
-      const prompt = 'Given this stock data: Ticker: ' + stock.ticker +
-        ', Company: ' + stock.name +
-        ', Price: $' + stock.price +
+      const prompt = 'Given this stock: ' + stock.ticker +
+        ' (' + stock.name + '), Price: $' + stock.price +
         ', Market Cap: ' + formatCap(stock.marketCap) +
         ', Sector: ' + stock.sector +
+        ', P/E: ' + fmtPE(stock.peRatio) +
+        ', Book Value: ' + fmtBook(stock.bookValue) +
+        ', 52W Range: ' + fmt52(stock.week52Low, stock.week52High) +
         '. Give a one word opinion: Buy, Hold, or Sell. Return ONLY that one word.'
 
       if (IS_LOCAL) {
@@ -420,12 +434,14 @@
       }
     }
 
-    // Get Claude's summary of a stock
     async function getSummary(stock) {
       const prompt = 'Give a 2-3 sentence plain English summary of ' + stock.name +
         ' (' + stock.ticker + ') in the ' + stock.sector +
-        ' sector. Current price $' + stock.price +
-        ', market cap ' + formatCap(stock.marketCap) +
+        ' sector. Price: $' + stock.price +
+        ', Market cap: ' + formatCap(stock.marketCap) +
+        ', P/E: ' + fmtPE(stock.peRatio) +
+        ', Book value: ' + fmtBook(stock.bookValue) +
+        ', 52W range: ' + fmt52(stock.week52Low, stock.week52High) +
         '. What does the company do and what should an investor know?'
 
       if (IS_LOCAL) {
@@ -451,7 +467,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             max_tokens: 200,
-            system: 'You are a financial analyst. Give clear, plain English summaries of companies.',
+            system: 'You are a financial analyst. Give clear plain English summaries.',
             messages: [{ role: 'user', content: prompt }]
           })
         })
@@ -460,7 +476,6 @@
       }
     }
 
-    // Main screening function
     async function screen() {
       const maxPrice = parseFloat(document.getElementById('maxPrice').value)
       const marketCap = document.getElementById('marketCap').value
@@ -478,7 +493,7 @@
       out.innerHTML = '<div class="status">Fetching stocks from Finnhub — this may take 20-30 seconds...</div>'
 
       try {
-        // Fetch matching stocks
+
         const stocks = await fetchStocks(maxPrice, marketCap, minVolume)
 
         if (!stocks || stocks.length === 0) {
@@ -501,7 +516,7 @@
           }
         }
 
-        // Build table
+        // Build table rows
         const rows = stocks.map(function(stock, i) {
           const opinion = opinionsMap[stock.ticker] || 'Hold'
           const opClass = opinion.toLowerCase().includes('buy') ? 'buy'
@@ -515,6 +530,9 @@
             '<td><span class="ticker">' + stock.ticker + '</span></td>' +
             '<td>' + (stock.name || 'N/A') + '</td>' +
             '<td class="price">$' + stock.price.toFixed(2) + '</td>' +
+            '<td class="cap">' + fmt52(stock.week52Low, stock.week52High) + '</td>' +
+            '<td class="cap">' + fmtPE(stock.peRatio) + '</td>' +
+            '<td class="cap">' + fmtBook(stock.bookValue) + '</td>' +
             '<td class="cap">' + formatCap(stock.marketCap) + '</td>' +
             '<td class="cap">' + formatVolume(stock.volume) + '</td>' +
             '<td>' + stock.sector + '</td>' +
@@ -522,18 +540,21 @@
             '<td><button class="info-btn" onclick="toggleSummary(' + i + ', ' + JSON.stringify(stock).replace(/"/g, '&quot;') + ')">i</button></td>' +
           '</tr>' +
           '<tr id="summary-' + i + '" style="display:none">' +
-            '<td colspan="8" class="summary-panel"><span class="summary-loading">Loading summary...</span></td>' +
+            '<td colspan="11" class="summary-panel"><span class="summary-loading">Loading summary...</span></td>' +
           '</tr>'
         }).join('')
 
         out.innerHTML =
-          '<div class="results-count">Showing ' + stocks.length + ' stocks matching your filters — prices delayed 15 min.</div>' +
+          '<div class="results-count">Showing ' + stocks.length + ' stocks — prices delayed 15 min. Not financial advice.</div>' +
           '<div class="table-wrap">' +
             '<table>' +
               '<thead><tr>' +
                 '<th>Ticker</th>' +
                 '<th>Company</th>' +
                 '<th>Price</th>' +
+                '<th>52W Low / High</th>' +
+                '<th>P/E</th>' +
+                '<th>Book value</th>' +
                 '<th>Mkt cap</th>' +
                 '<th>Volume</th>' +
                 '<th>Sector</th>' +
@@ -552,7 +573,6 @@
       btn.textContent = 'Screen stocks'
     }
 
-    // Toggle summary panel
     async function toggleSummary(index, stock) {
       const summaryRow = document.getElementById('summary-' + index)
 
