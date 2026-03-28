@@ -9,78 +9,94 @@ exports.handler = async function(event) {
     const { maxPrice, marketCap, minVolume } = body
     const token = process.env.FINNHUB_API_KEY
 
-    // Build market cap filter values
-    let marketCapMin = 0
-    let marketCapMax = 99999999
-    if (marketCap === 'small') { marketCapMin = 0; marketCapMax = 2000 }
-    if (marketCap === 'mid')   { marketCapMin = 2000; marketCapMax = 10000 }
-    if (marketCap === 'large') { marketCapMin = 10000; marketCapMax = 99999999 }
-
-    // Build volume minimum
+    // Volume minimum map
     const volumeMap = { any: 0, '100k': 100000, '500k': 500000, '1m': 1000000, '5m': 5000000 }
     const minVol = volumeMap[minVolume] || 0
 
-    // Step 1 — Use Finnhub stock screener endpoint — one call returns filtered list
-    const screenerUrl = 'https://finnhub.io/api/v1/stock/symbol?exchange=US&token=' + token
-    const symbolsRes = await fetch(screenerUrl)
+    // Market cap range in millions
+    let capMin = 0
+    let capMax = 99999999
+    if (marketCap === 'small') { capMin = 0;     capMax = 2000  }
+    if (marketCap === 'mid')   { capMin = 2000;   capMax = 10000 }
+    if (marketCap === 'large') { capMin = 10000;  capMax = 99999999 }
+
+    // Step 1 — Get symbol list and filter to clean common stocks only
+    const symbolsRes = await fetch(
+      'https://finnhub.io/api/v1/stock/symbol?exchange=US&token=' + token
+    )
     const allSymbols = await symbolsRes.json()
 
-    // Filter to common stocks only — skip ETFs, warrants etc.
-    const stocks = allSymbols.filter(s =>
+    const cleanSymbols = allSymbols.filter(s =>
       s.type === 'Common Stock' &&
       s.symbol &&
+      s.symbol.length <= 4 &&
       !s.symbol.includes('.') &&
-      !s.symbol.includes('-')
-    ).slice(0, 50)
-
-    // Step 2 — Fetch all data in parallel — much faster than sequential
-    const results = await Promise.all(
-      stocks.map(async function(stock) {
-        try {
-          const [quoteRes, profileRes, finRes] = await Promise.all([
-            fetch('https://finnhub.io/api/v1/quote?symbol=' + stock.symbol + '&token=' + token),
-            fetch('https://finnhub.io/api/v1/stock/profile2?symbol=' + stock.symbol + '&token=' + token),
-            fetch('https://finnhub.io/api/v1/stock/metric?symbol=' + stock.symbol + '&metric=all&token=' + token)
-          ])
-
-          const [quote, profile, fin] = await Promise.all([
-            quoteRes.json(),
-            profileRes.json(),
-            finRes.json()
-          ])
-
-          const metrics = fin.metric || {}
-          const price = quote.c
-          const volume = quote.v || 0
-          const cap = profile.marketCapitalization || 0
-
-          // Apply filters
-          if (!price || price <= 0) return null
-          if (price > maxPrice) return null
-          if (cap < marketCapMin || cap > marketCapMax) return null
-          if (volume < minVol) return null
-
-          return {
-            ticker: stock.symbol,
-            name: profile.name || stock.description || stock.symbol,
-            price: price,
-            marketCap: cap,
-            volume: volume,
-            sector: profile.finnhubIndustry || 'Unknown',
-            week52High: metrics['52WeekHigh'] || null,
-            week52Low: metrics['52WeekLow'] || null,
-            peRatio: metrics['peBasicExclExtraTTM'] || null,
-            bookValue: metrics['bookValuePerShareQuarterly'] || null
-          }
-
-        } catch(e) {
-          return null
-        }
-      })
+      !s.symbol.includes('-') &&
+      !s.symbol.includes('^')
     )
 
-    // Remove nulls and limit to 25
-    const filtered = results.filter(Boolean).slice(0, 25)
+    // Step 2 — Process in small batches of 10 to respect rate limits
+    const results = []
+    const batchSize = 10
+
+    for (let i = 0; i < cleanSymbols.length && results.length < 25; i += batchSize) {
+      const batch = cleanSymbols.slice(i, i + batchSize)
+
+      // Fetch all three endpoints for each stock in batch simultaneously
+      const batchResults = await Promise.all(
+        batch.map(async function(stock) {
+          try {
+            const [quoteRes, profileRes, finRes] = await Promise.all([
+              fetch('https://finnhub.io/api/v1/quote?symbol=' + stock.symbol + '&token=' + token),
+              fetch('https://finnhub.io/api/v1/stock/profile2?symbol=' + stock.symbol + '&token=' + token),
+              fetch('https://finnhub.io/api/v1/stock/metric?symbol=' + stock.symbol + '&metric=all&token=' + token)
+            ])
+
+            const [quote, profile, fin] = await Promise.all([
+              quoteRes.json(),
+              profileRes.json(),
+              finRes.json()
+            ])
+
+            const metrics = fin.metric || {}
+            const price = quote.c
+            const volume = quote.v || 0
+            const cap = profile.marketCapitalization || 0
+
+            // Apply all filters
+            if (!price || price <= 0) return null
+            if (price > maxPrice) return null
+            if (cap < capMin || cap > capMax) return null
+            if (volume < minVol) return null
+
+            return {
+              ticker: stock.symbol,
+              name: profile.name || stock.description || stock.symbol,
+              price: price,
+              marketCap: cap,
+              volume: volume,
+              sector: profile.finnhubIndustry || 'Unknown',
+              week52High: metrics['52WeekHigh'] || null,
+              week52Low: metrics['52WeekLow'] || null,
+              peRatio: metrics['peBasicExclExtraTTM'] || null,
+              bookValue: metrics['bookValuePerShareQuarterly'] || null
+            }
+
+          } catch(e) {
+            return null
+          }
+        })
+      )
+
+      // Add valid results from this batch
+      const validBatch = batchResults.filter(Boolean)
+      results.push(...validBatch)
+
+      // Small pause between batches to respect rate limits
+      if (results.length < 25 && i + batchSize < cleanSymbols.length) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
 
     return {
       statusCode: 200,
@@ -88,7 +104,7 @@ exports.handler = async function(event) {
         'Access-Control-Allow-Origin': '*',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ stocks: filtered })
+      body: JSON.stringify({ stocks: results.slice(0, 25) })
     }
 
   } catch(e) {
