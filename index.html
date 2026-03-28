@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Screener</title>
+  <style>
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f0f0f0;
+      font-family: sans-serif;
+    }
+
+    .app {
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 1.5rem 1.25rem;
+      background: white;
+      border: 3px solid #1a1a1a;
+      border-radius: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0 0 6px;
+      color: #1a1a1a;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #666;
+      margin: 0 0 1.25rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 2px solid #e0e0e0;
+    }
+
+    .disclaimer {
+      font-size: 11px;
+      color: #999;
+      background: #f9f9f9;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 1.25rem;
+    }
+
+    .filters {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 1.25rem;
+      align-items: flex-end;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .filter-group label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    input[type="number"] {
+      width: 100px;
+      padding: 9px 12px;
+      border: 2px solid #1a1a1a;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    select {
+      padding: 9px 12px;
+      border: 2px solid #1a1a1a;
+      border-radius: 8px;
+      font-size: 14px;
+      background: white;
+      cursor: pointer;
+      min-width: 140px;
+    }
+
+    button {
+      padding: 10px 22px;
+      border: 2px solid #1a1a1a;
+      border-radius: 8px;
+      background: #1a1a1a;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button:hover { background: #333; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .status {
+      font-size: 13px;
+      color: #666;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 2.5rem;
+      color: #aaa;
+      font-size: 14px;
+      border: 2px dashed #ddd;
+      border-radius: 12px;
+    }
+
+    .error {
+      font-size: 13px;
+      color: #c0392b;
+      background: #fdf0ee;
+      border: 2px solid #e74c3c;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .results-count {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 10px;
+    }
+
+    /* Table */
+    .table-wrap {
+      overflow-x: auto;
+      border: 3px solid #1a1a1a;
+      border-radius: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead {
+      background: #f7f7f7;
+      border-bottom: 2px solid #1a1a1a;
+    }
+
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #e8e8e8;
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #fafafa; }
+
+    .ticker {
+      font-family: monospace;
+      font-weight: 700;
+      font-size: 14px;
+      color: #185FA5;
+    }
+
+    .price {
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+
+    .cap { color: #555; }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 6px;
+    }
+
+    .buy  { background: #eaf3de; color: #3B6D11; }
+    .hold { background: #faeeda; color: #854F0B; }
+    .sell { background: #fcebeb; color: #A32D2D; }
+
+    .info-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 2px solid #ccc;
+      background: white;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      color: #666;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .info-btn:hover {
+      border-color: #1a1a1a;
+      color: #1a1a1a;
+    }
+
+    /* Summary panel */
+    .summary-panel {
+      background: #f7f7f7;
+      border-top: 2px solid #e0e0e0;
+    }
+
+    .summary-panel td {
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #333;
+      line-height: 1.6;
+      border-bottom: none;
+    }
+
+    .summary-loading {
+      color: #888;
+      font-style: italic;
+    }
+
+  </style>
+</head>
+<body>
+
+  <div class="app">
+
+    <h1>US Stock Screener</h1>
+    <p class="subtitle">Filter US stocks by price, market cap and volume — powered by Finnhub and Claude AI.</p>
+
+    <div class="disclaimer">
+      AI opinions (Buy/Hold/Sell) are generated by Claude for informational purposes only and are NOT financial advice. Always do your own research before making investment decisions.
+    </div>
+
+    <div class="filters">
+
+      <div class="filter-group">
+        <label>Max price ($)</label>
+        <input type="number" id="maxPrice" value="30" min="1" max="10000">
+      </div>
+
+      <div class="filter-group">
+        <label>Market cap</label>
+        <select id="marketCap">
+          <option value="any">Any</option>
+          <option value="small">Small cap (&lt;$2B)</option>
+          <option value="mid">Mid cap ($2B–$10B)</option>
+          <option value="large">Large cap (&gt;$10B)</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label>Min daily volume</label>
+        <select id="minVolume">
+          <option value="any">Any</option>
+          <option value="100k">100K+</option>
+          <option value="500k">500K+</option>
+          <option value="1m" selected>1M+</option>
+          <option value="5m">5M+</option>
+        </select>
+      </div>
+
+      <button id="screenBtn">Screen stocks</button>
+
+    </div>
+
+    <div id="output">
+      <div class="empty">Set your filters and click Screen stocks.</div>
+    </div>
+
+  </div>
+
+  <script>
+
+    // Detects if running locally or on Netlify
+    const IS_LOCAL = window.location.protocol === 'file:'
+                  || window.location.hostname === 'localhost'
+                  || window.location.hostname === '127.0.0.1'
+
+    // Local keys — only used when testing locally
+    const LOCAL_FINNHUB_KEY = 'YOUR-FINNHUB-KEY-HERE'
+    const LOCAL_ANTHROPIC_KEY = 'YOUR-ANTHROPIC-KEY-HERE'
+
+    // Format market cap nicely — e.g. 1200 → $1.2B
+    function formatCap(capInMillions) {
+      if (!capInMillions) return 'N/A'
+      if (capInMillions >= 1000) return '$' + (capInMillions / 1000).toFixed(1) + 'B'
+      return '$' + capInMillions.toFixed(0) + 'M'
+    }
+
+    // Format volume nicely — e.g. 1500000 → 1.5M
+    function formatVolume(vol) {
+      if (!vol) return 'N/A'
+      if (vol >= 1000000) return (vol / 1000000).toFixed(1) + 'M'
+      if (vol >= 1000) return (vol / 1000).toFixed(0) + 'K'
+      return vol
+    }
+
+    // Fetch stocks — switches between local and Netlify
+    async function fetchStocks(maxPrice, marketCap, minVolume) {
+      if (IS_LOCAL) {
+        // Running locally — call Finnhub directly
+        const symbolsRes = await fetch(
+          'https://finnhub.io/api/v1/stock/symbol?exchange=US&token=' + LOCAL_FINNHUB_KEY
+        )
+        const symbols = await symbolsRes.json()
+        const sample = symbols.slice(0, 100)
+        const results = []
+
+        for (const stock of sample) {
+          try {
+            const quoteRes = await fetch(
+              'https://finnhub.io/api/v1/quote?symbol=' + stock.symbol +
+              '&token=' + LOCAL_FINNHUB_KEY
+            )
+            const quote = await quoteRes.json()
+
+            const profileRes = await fetch(
+              'https://finnhub.io/api/v1/stock/profile2?symbol=' + stock.symbol +
+              '&token=' + LOCAL_FINNHUB_KEY
+            )
+            const profile = await profileRes.json()
+
+            const price = quote.c
+            const volume = quote.v
+            const cap = profile.marketCapitalization
+            const sector = profile.finnhubIndustry || 'Unknown'
+
+            if (!price || price <= 0) continue
+            if (price > maxPrice) continue
+            if (marketCap === 'small' && cap >= 2000) continue
+            if (marketCap === 'mid' && (cap < 2000 || cap >= 10000)) continue
+            if (marketCap === 'large' && cap < 10000) continue
+            if (minVolume === '100k' && volume < 100000) continue
+            if (minVolume === '500k' && volume < 500000) continue
+            if (minVolume === '1m' && volume < 1000000) continue
+            if (minVolume === '5m' && volume < 5000000) continue
+
+            results.push({
+              ticker: stock.symbol,
+              name: profile.name || stock.description,
+              price: price,
+              marketCap: cap,
+              volume: volume,
+              sector: sector
+            })
+
+            if (results.length >= 25) break
+
+          } catch(e) { continue }
+        }
+        return results
+
+      } else {
+        // Running on Netlify — call server function
+        const response = await fetch('/.netlify/functions/get-stocks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ maxPrice, marketCap, minVolume })
+        })
+        const data = await response.json()
+        return data.stocks
+      }
+    }
+
+    // Get Claude's opinion on a stock
+    async function getOpinion(stock) {
+      const prompt = 'Given this stock data: Ticker: ' + stock.ticker +
+        ', Company: ' + stock.name +
+        ', Price: $' + stock.price +
+        ', Market Cap: ' + formatCap(stock.marketCap) +
+        ', Sector: ' + stock.sector +
+        '. Give a one word opinion: Buy, Hold, or Sell. Return ONLY that one word.'
+
+      if (IS_LOCAL) {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': LOCAL_ANTHROPIC_KEY,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 10,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        })
+        const data = await response.json()
+        return data.content[0].text.trim()
+      } else {
+        const response = await fetch('/.netlify/functions/get-recipe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            max_tokens: 10,
+            system: 'You are a financial analyst. Return ONLY one word: Buy, Hold, or Sell.',
+            messages: [{ role: 'user', content: prompt }]
+          })
+        })
+        const data = await response.json()
+        return data.content[0].text.trim()
+      }
+    }
+
+    // Get Claude's summary of a stock
+    async function getSummary(stock) {
+      const prompt = 'Give a 2-3 sentence plain English summary of ' + stock.name +
+        ' (' + stock.ticker + ') in the ' + stock.sector +
+        ' sector. Current price $' + stock.price +
+        ', market cap ' + formatCap(stock.marketCap) +
+        '. What does the company do and what should an investor know?'
+
+      if (IS_LOCAL) {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': LOCAL_ANTHROPIC_KEY,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-direct-browser-access': 'true'
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        })
+        const data = await response.json()
+        return data.content[0].text.trim()
+      } else {
+        const response = await fetch('/.netlify/functions/get-recipe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            max_tokens: 200,
+            system: 'You are a financial analyst. Give clear, plain English summaries of companies.',
+            messages: [{ role: 'user', content: prompt }]
+          })
+        })
+        const data = await response.json()
+        return data.content[0].text.trim()
+      }
+    }
+
+    // Main screening function
+    async function screen() {
+      const maxPrice = parseFloat(document.getElementById('maxPrice').value)
+      const marketCap = document.getElementById('marketCap').value
+      const minVolume = document.getElementById('minVolume').value
+      const btn = document.getElementById('screenBtn')
+      const out = document.getElementById('output')
+
+      if (!maxPrice || maxPrice <= 0) {
+        out.innerHTML = '<div class="error">Please enter a valid maximum price.</div>'
+        return
+      }
+
+      btn.disabled = true
+      btn.textContent = 'Screening...'
+      out.innerHTML = '<div class="status">Fetching stocks from Finnhub — this may take 20-30 seconds...</div>'
+
+      try {
+        // Fetch matching stocks
+        const stocks = await fetchStocks(maxPrice, marketCap, minVolume)
+
+        if (!stocks || stocks.length === 0) {
+          out.innerHTML = '<div class="empty">No stocks found matching your filters. Try relaxing the criteria.</div>'
+          btn.disabled = false
+          btn.textContent = 'Screen stocks'
+          return
+        }
+
+        out.innerHTML = '<div class="status">Found ' + stocks.length + ' stocks. Getting AI opinions...</div>'
+
+        // Get Claude opinion for each stock
+        const opinionsMap = {}
+        for (const stock of stocks) {
+          try {
+            const opinion = await getOpinion(stock)
+            opinionsMap[stock.ticker] = opinion
+          } catch(e) {
+            opinionsMap[stock.ticker] = 'Hold'
+          }
+        }
+
+        // Build table
+        const rows = stocks.map(function(stock, i) {
+          const opinion = opinionsMap[stock.ticker] || 'Hold'
+          const opClass = opinion.toLowerCase().includes('buy') ? 'buy'
+                        : opinion.toLowerCase().includes('sell') ? 'sell'
+                        : 'hold'
+          const opLabel = opinion.toLowerCase().includes('buy') ? 'Buy'
+                        : opinion.toLowerCase().includes('sell') ? 'Sell'
+                        : 'Hold'
+
+          return '<tr id="row-' + i + '">' +
+            '<td><span class="ticker">' + stock.ticker + '</span></td>' +
+            '<td>' + (stock.name || 'N/A') + '</td>' +
+            '<td class="price">$' + stock.price.toFixed(2) + '</td>' +
+            '<td class="cap">' + formatCap(stock.marketCap) + '</td>' +
+            '<td class="cap">' + formatVolume(stock.volume) + '</td>' +
+            '<td>' + stock.sector + '</td>' +
+            '<td><span class="badge ' + opClass + '">' + opLabel + '</span></td>' +
+            '<td><button class="info-btn" onclick="toggleSummary(' + i + ', ' + JSON.stringify(stock).replace(/"/g, '&quot;') + ')">i</button></td>' +
+          '</tr>' +
+          '<tr id="summary-' + i + '" style="display:none">' +
+            '<td colspan="8" class="summary-panel"><span class="summary-loading">Loading summary...</span></td>' +
+          '</tr>'
+        }).join('')
+
+        out.innerHTML =
+          '<div class="results-count">Showing ' + stocks.length + ' stocks matching your filters — prices delayed 15 min.</div>' +
+          '<div class="table-wrap">' +
+            '<table>' +
+              '<thead><tr>' +
+                '<th>Ticker</th>' +
+                '<th>Company</th>' +
+                '<th>Price</th>' +
+                '<th>Mkt cap</th>' +
+                '<th>Volume</th>' +
+                '<th>Sector</th>' +
+                '<th>Opinion</th>' +
+                '<th>Info</th>' +
+              '</tr></thead>' +
+              '<tbody>' + rows + '</tbody>' +
+            '</table>' +
+          '</div>'
+
+      } catch(e) {
+        out.innerHTML = '<div class="error">Something went wrong: ' + e.message + '</div>'
+      }
+
+      btn.disabled = false
+      btn.textContent = 'Screen stocks'
+    }
+
+    // Toggle summary panel
+    async function toggleSummary(index, stock) {
+      const summaryRow = document.getElementById('summary-' + index)
+
+      if (summaryRow.style.display !== 'none') {
+        summaryRow.style.display = 'none'
+        return
+      }
+
+      summaryRow.style.display = 'table-row'
+      summaryRow.querySelector('td').innerHTML = '<span class="summary-loading">Getting Claude summary...</span>'
+
+      try {
+        const summary = await getSummary(stock)
+        summaryRow.querySelector('td').innerHTML = summary
+      } catch(e) {
+        summaryRow.querySelector('td').innerHTML = 'Could not load summary.'
+      }
+    }
+
+    document.getElementById('screenBtn').addEventListener('click', screen)
+
+  </script>
+
+</body>
+</html>
