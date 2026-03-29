@@ -14,7 +14,7 @@
     }
 
     .app {
-      max-width: 1200px;
+      max-width: 1100px;
       margin: 40px auto;
       padding: 1.5rem 1.25rem;
       background: white;
@@ -265,41 +265,6 @@
     .score-low  .score-bar-fill { background: #A32D2D; }
     .score-low  .score-label    { color: #A32D2D; }
 
-    .info-btn {
-      width: 24px;
-      height: 24px;
-      border-radius: 50%;
-      border: 2px solid #ccc;
-      background: white;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 700;
-      color: #666;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .info-btn:hover {
-      border-color: #1a1a1a;
-      color: #1a1a1a;
-    }
-
-    .summary-panel td {
-      padding: 12px 16px;
-      font-size: 13px;
-      color: #333;
-      line-height: 1.6;
-      background: #f7f7f7;
-      border-top: 1px solid #e0e0e0;
-      white-space: normal;
-    }
-
-    .summary-loading {
-      color: #888;
-      font-style: italic;
-    }
-
   </style>
 </head>
 <body>
@@ -307,7 +272,7 @@
   <div class="app">
 
     <h1>US Stock Screener</h1>
-    <p class="subtitle">Filter US stocks by price, market cap and volume — powered by Yahoo Finance and Claude AI.</p>
+    <p class="subtitle">Filter US stocks by price, market cap and volume — powered by Yahoo Finance.</p>
 
     <div class="disclaimer">
       Value scores are calculated from price position in 52W range, P/E ratio and book value. For informational purposes only — NOT financial advice. Always do your own research.
@@ -364,12 +329,6 @@
 
   <script>
 
-    const IS_LOCAL = window.location.protocol === 'file:'
-                  || window.location.hostname === 'localhost'
-                  || window.location.hostname === '127.0.0.1'
-
-    const LOCAL_ANTHROPIC_KEY = 'YOUR-ANTHROPIC-KEY-HERE'
-
     function formatCap(cap) {
       if (!cap) return 'N/A'
       if (cap >= 1000000000000) return '$' + (cap / 1000000000000).toFixed(1) + 'T'
@@ -383,12 +342,6 @@
       if (vol >= 1000000) return (vol / 1000000).toFixed(1) + 'M'
       if (vol >= 1000)    return (vol / 1000).toFixed(0) + 'K'
       return vol
-    }
-
-    function fmt52(low, high) {
-      const l = low  ? '$' + low.toFixed(2)  : 'N/A'
-      const h = high ? '$' + high.toFixed(2) : 'N/A'
-      return l + ' / ' + h
     }
 
     function fmtPE(pe) {
@@ -422,7 +375,7 @@
              '</div>'
     }
 
-    // Calculate value score 0-100 from stock data
+    // Calculate value score 0-100
     function calcScore(stock) {
       let score = 0
       let factors = 0
@@ -437,7 +390,7 @@
         }
       }
 
-      // Factor 2 — Price to book value (30 points)
+      // Factor 2 — Price to book (30 points)
       if (stock.bookValue && stock.price && stock.bookValue > 0) {
         const ptb = stock.price / stock.bookValue
         if (ptb < 1)        score += 30
@@ -485,49 +438,6 @@
       })
       const data = await response.json()
       return data.stocks
-    }
-
-    async function getSummary(stock, score) {
-      const prompt = 'Give a 2-3 sentence plain English summary of ' + stock.name +
-        ' (' + stock.ticker + ') in the ' + stock.sector + ' sector. ' +
-        'Price: $' + stock.price + ', ' +
-        'Market cap: ' + formatCap(stock.marketCap) + ', ' +
-        'P/E: ' + fmtPE(stock.peRatio) + ', ' +
-        'Book value: ' + fmtBook(stock.bookValue) + ', ' +
-        '52W range: ' + fmt52(stock.week52Low, stock.week52High) + ', ' +
-        'Value score: ' + score + '/100. ' +
-        'What does the company do and what do these metrics suggest about its value?'
-
-      if (IS_LOCAL) {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': LOCAL_ANTHROPIC_KEY,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true'
-          },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 200,
-            messages: [{ role: 'user', content: prompt }]
-          })
-        })
-        const data = await response.json()
-        return data.content[0].text.trim()
-      } else {
-        const response = await fetch('/.netlify/functions/get-recipe', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            max_tokens: 200,
-            system: 'You are a financial analyst. Give clear plain English summaries of stocks.',
-            messages: [{ role: 'user', content: prompt }]
-          })
-        })
-        const data = await response.json()
-        return data.content[0].text.trim()
-      }
     }
 
     async function screen() {
@@ -579,7 +489,7 @@
 
         // Build table rows
         const rows = scored.map(function(stock, i) {
-          return '<tr id="row-' + i + '">' +
+          return '<tr>' +
             '<td><span class="ticker">' + stock.ticker + '</span></td>' +
             '<td>' + (stock.name || 'N/A') + '</td>' +
             '<td class="price">$' + stock.price.toFixed(2) + '</td>' +
@@ -588,12 +498,7 @@
             '<td class="cap">' + fmtBook(stock.bookValue) + '</td>' +
             '<td class="cap">' + formatCap(stock.marketCap) + '</td>' +
             '<td class="cap">' + formatVolume(stock.volume) + '</td>' +
-            '<td>' + stock.sector + '</td>' +
             '<td>' + scoreBar(stock.score) + '</td>' +
-            '<td><button class="info-btn" onclick="toggleSummary(' + i + ', ' + JSON.stringify(stock).replace(/"/g, '&quot;') + ', ' + stock.score + ')">i</button></td>' +
-          '</tr>' +
-          '<tr id="summary-' + i + '" style="display:none">' +
-            '<td colspan="11" class="summary-panel"><span class="summary-loading">Loading summary...</span></td>' +
           '</tr>'
         }).join('')
 
@@ -610,9 +515,7 @@
                 '<th>Book value</th>' +
                 '<th>Mkt cap</th>' +
                 '<th>Volume</th>' +
-                '<th>Sector</th>' +
                 '<th>Value score</th>' +
-                '<th>Info</th>' +
               '</tr></thead>' +
               '<tbody>' + rows + '</tbody>' +
             '</table>' +
@@ -624,25 +527,6 @@
 
       btn.disabled = false
       btn.textContent = 'Screen stocks'
-    }
-
-    async function toggleSummary(index, stock, score) {
-      const summaryRow = document.getElementById('summary-' + index)
-
-      if (summaryRow.style.display !== 'none') {
-        summaryRow.style.display = 'none'
-        return
-      }
-
-      summaryRow.style.display = 'table-row'
-      summaryRow.querySelector('td').innerHTML = '<span class="summary-loading">Getting Claude summary...</span>'
-
-      try {
-        const summary = await getSummary(stock, score)
-        summaryRow.querySelector('td').innerHTML = summary
-      } catch(e) {
-        summaryRow.querySelector('td').innerHTML = 'Could not load summary.'
-      }
     }
 
     document.getElementById('screenBtn').addEventListener('click', screen)
