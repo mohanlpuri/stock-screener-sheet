@@ -337,16 +337,21 @@
     }
 
     async function getOpinion(stock) {
-      const prompt = 'You are a financial analyst evaluating stocks for a retail investor. ' +
-        'Based ONLY on these metrics, give ONE word: Buy, Hold, or Sell. ' +
-        'Stock: ' + stock.ticker + ' (' + stock.name + '). ' +
-        'Current price: $' + stock.price + '. ' +
-        '52W range: ' + fmt52(stock.week52Low, stock.week52High) + ' — is price near low (bullish) or high (bearish)? ' +
-        'P/E ratio: ' + fmtPE(stock.peRatio) + ' — low P/E may indicate value. ' +
-        'Book value: ' + fmtBook(stock.bookValue) + ' — price vs book value matters. ' +
-        'Market cap: ' + formatCap(stock.marketCap) + '. ' +
-        'Sector: ' + stock.sector + '. ' +
-        'Give genuine differentiated analysis — not everything is Hold. ' +
+     const prompt = 'You are a financial analyst. Analyze this stock and give ONE word only.\n' +
+        'Ticker: ' + stock.ticker + '\n' +
+        'Company: ' + stock.name + '\n' +
+        'Sector: ' + stock.sector + '\n' +
+        'Price: $' + stock.price + '\n' +
+        '52W Low: ' + (stock.week52Low ? '$' + stock.week52Low.toFixed(2) : 'N/A') + '\n' +
+        '52W High: ' + (stock.week52High ? '$' + stock.week52High.toFixed(2) : 'N/A') + '\n' +
+        'P/E Ratio: ' + fmtPE(stock.peRatio) + '\n' +
+        'Book Value: ' + fmtBook(stock.bookValue) + '\n' +
+        'Market Cap: ' + formatCap(stock.marketCap) + '\n\n' +
+        'Rules:\n' +
+        '- If price is within 10% of 52W low AND P/E is reasonable: Buy\n' +
+        '- If price is within 10% of 52W high OR P/E is very high: Sell\n' +
+        '- If price is trading below book value: Buy\n' +
+        '- Otherwise: Hold\n' +
         'Return ONLY one word: Buy, Hold, or Sell.'
 
       if (IS_LOCAL) {
