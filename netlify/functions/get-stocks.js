@@ -17,7 +17,6 @@ exports.handler = async function(event) {
     if (marketCap === 'mid')   { capMin = 2000000000;    capMax = 10000000000   }
     if (marketCap === 'large') { capMin = 10000000000;   capMax = 99999999999999 }
 
-    // Use custom tickers if provided — otherwise use default universe
     const defaultTickers = [
       // Banks & Financial
       'BAC','WFC','C','USB','FITB','RF','KEY','HBAN','CFG','MTB',
@@ -41,12 +40,11 @@ exports.handler = async function(event) {
       'GE','DVN','OVV','CIVI','SM','NOG','CHK','AR'
     ].filter((v, i, a) => a.indexOf(v) === i)
 
-    // If user typed custom tickers use those — otherwise use default list
     const tickers = (customTickers && customTickers.length > 0)
       ? customTickers
       : defaultTickers
 
-    // Step 1 — get a crumb and cookie from Yahoo Finance
+    // Step 1 — get crumb and cookie from Yahoo Finance
     const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -73,7 +71,6 @@ exports.handler = async function(event) {
     const data = await quotesRes.json()
     const quotes = data?.quoteResponse?.result || []
 
-    // Apply filters and build results
     const results = quotes
       .filter(q => {
         if (!q) return false

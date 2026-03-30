@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stock Screener</title>
+  <title>US Stock Screener</title>
   <style>
 
     body {
@@ -14,7 +14,7 @@
     }
 
     .app {
-      max-width: 1100px;
+      max-width: 1200px;
       margin: 40px auto;
       padding: 1.5rem 1.25rem;
       background: white;
@@ -282,7 +282,7 @@
     <p class="subtitle">Filter US stocks by price, market cap and volume — powered by Yahoo Finance.</p>
 
     <div class="disclaimer">
-      Value scores are calculated from price position in 52W range, P/E ratio and book value. For informational purposes only — NOT financial advice. Always do your own research.
+      Value scores are calculated from price position in 52W range, P/E ratio and book value. Analyst ratings are from Yahoo Finance. For informational purposes only — NOT financial advice. Always do your own research.
     </div>
 
     <div class="filters">
@@ -323,6 +323,7 @@
           <option value="80">80+</option>
         </select>
       </div>
+
       <div class="filter-group">
         <label>Analyst opinion</label>
         <select id="analystFilter">
@@ -332,9 +333,10 @@
           <option value="Sell">Sell</option>
         </select>
       </div>
+
       <div class="filter-group">
         <label>Custom tickers (optional)</label>
-        <input type="text" id="customTickers" placeholder="e.g. AAPL, MSFT, BAC" style="width:220px;">
+        <input type="text" id="customTickers" placeholder="e.g. AAPL, MSFT, BAC" style="width:200px;">
       </div>
 
       <button id="screenBtn">Screen stocks</button>
@@ -373,19 +375,18 @@
       if (!bv) return 'N/A'
       return '$' + bv.toFixed(2)
     }
+
     function fmtAnalyst(rating, count) {
       if (!rating) return '<span class="cap">N/A</span>'
-      // Yahoo returns rating like "1.5 - Strong Buy" — extract the label
       const label = rating.includes(' - ') ? rating.split(' - ')[1] : rating
       const num = count ? ' (' + count + ')' : ''
-      // Color based on rating label
       const color = label.includes('Buy')  ? '#3B6D11'
                   : label.includes('Sell') ? '#A32D2D'
                   : '#854F0B'
-      return '<span style="color:' + color + '; font-weight:600; font-size:12px;">' +
-               label + '</span>' +
-               '<span style="color:#888; font-size:11px;">' + num + '</span>'
+      return '<span style="color:' + color + '; font-weight:600; font-size:12px;">' + label + '</span>' +
+             '<span style="color:#888; font-size:11px;">' + num + '</span>'
     }
+
     // Visual 52W range bar with current price dot
     function rangeBar(low, high, current) {
       if (!low || !high || !current) return '<span class="cap">N/A</span>'
@@ -475,6 +476,7 @@
       const marketCap     = document.getElementById('marketCap').value
       const minVolume     = document.getElementById('minVolume').value
       const scoreFilter   = parseInt(document.getElementById('scoreFilter').value)
+      const analystFilter = document.getElementById('analystFilter').value
       const customTickers = document.getElementById('customTickers').value
         .split(',')
         .map(function(t) { return t.trim().toUpperCase() })
@@ -502,27 +504,38 @@
           return
         }
 
-        // Calculate score, filter and sort
+        // Calculate score, apply all filters and sort
         const scored = stocks
           .map(function(stock) {
             return Object.assign({}, stock, { score: calcScore(stock) })
           })
           .filter(function(stock) {
-            return stock.score >= scoreFilter
+            // Value score filter
+            if (stock.score < scoreFilter) return false
+            // Analyst opinion filter
+            if (analystFilter !== 'all') {
+              if (!stock.analystRating) return false
+              // Yahoo returns e.g. "1.5 - Strong Buy" — check if it contains Buy/Hold/Sell
+              const label = stock.analystRating.includes(' - ')
+                ? stock.analystRating.split(' - ')[1]
+                : stock.analystRating
+              if (!label.includes(analystFilter)) return false
+            }
+            return true
           })
           .sort(function(a, b) {
             return b.score - a.score
           })
 
         if (scored.length === 0) {
-          out.innerHTML = '<div class="empty">No stocks meet the minimum value score. Try lowering the score filter.</div>'
+          out.innerHTML = '<div class="empty">No stocks match your filters. Try relaxing the criteria.</div>'
           btn.disabled = false
           btn.textContent = 'Screen stocks'
           return
         }
 
         // Build table rows
-        const rows = scored.map(function(stock, i) {
+        const rows = scored.map(function(stock) {
           return '<tr>' +
             '<td><span class="ticker">' + stock.ticker + '</span></td>' +
             '<td>' + (stock.name || 'N/A') + '</td>' +
@@ -554,7 +567,7 @@
                 '<th>Book value</th>' +
                 '<th>Mkt cap</th>' +
                 '<th>Volume</th>' +
-               '<th>Analyst rating</th>' +
+                '<th>Analyst rating</th>' +
                 '<th>Value score</th>' +
               '</tr></thead>' +
               '<tbody>' + rows + '</tbody>' +
