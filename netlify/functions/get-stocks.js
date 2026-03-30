@@ -97,7 +97,9 @@ exports.handler = async function(event) {
         week52High: q.fiftyTwoWeekHigh || null,
         week52Low: q.fiftyTwoWeekLow || null,
         peRatio: q.trailingPE || null,
-        bookValue: q.bookValue || null
+        bookValue: q.bookValue || null,
+        analystRating: q.averageAnalystRating || null,
+        analystCount: q.numberOfAnalystOpinions || null
       }))
 
     return {

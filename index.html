@@ -365,7 +365,19 @@
       if (!bv) return 'N/A'
       return '$' + bv.toFixed(2)
     }
-
+    function fmtAnalyst(rating, count) {
+      if (!rating) return '<span class="cap">N/A</span>'
+      // Yahoo returns rating like "1.5 - Strong Buy" — extract the label
+      const label = rating.includes(' - ') ? rating.split(' - ')[1] : rating
+      const num = count ? ' (' + count + ')' : ''
+      // Color based on rating label
+      const color = label.includes('Buy')  ? '#3B6D11'
+                  : label.includes('Sell') ? '#A32D2D'
+                  : '#854F0B'
+      return '<span style="color:' + color + '; font-weight:600; font-size:12px;">' +
+               label + '</span>' +
+               '<span style="color:#888; font-size:11px;">' + num + '</span>'
+    }
     // Visual 52W range bar with current price dot
     function rangeBar(low, high, current) {
       if (!low || !high || !current) return '<span class="cap">N/A</span>'
@@ -512,6 +524,7 @@
             '<td class="cap">' + fmtBook(stock.bookValue) + '</td>' +
             '<td class="cap">' + formatCap(stock.marketCap) + '</td>' +
             '<td class="cap">' + formatVolume(stock.volume) + '</td>' +
+            '<td>' + fmtAnalyst(stock.analystRating, stock.analystCount) + '</td>' +
             '<td>' + scoreBar(stock.score) + '</td>' +
           '</tr>'
         }).join('')
@@ -533,6 +546,7 @@
                 '<th>Book value</th>' +
                 '<th>Mkt cap</th>' +
                 '<th>Volume</th>' +
+               '<th>Analyst rating</th>' +
                 '<th>Value score</th>' +
               '</tr></thead>' +
               '<tbody>' + rows + '</tbody>' +
