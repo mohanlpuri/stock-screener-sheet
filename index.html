@@ -375,6 +375,10 @@
       if (!bv) return 'N/A'
       return '$' + bv.toFixed(2)
     }
+    function fmtDividend(yield_) {
+      if (!yield_ || yield_ <= 0) return '<span class="cap">N/A</span>'
+      return (yield_ * 100).toFixed(2) + '%'
+    }
 
     function fmtAnalyst(rating, count) {
       if (!rating) return '<span class="cap">N/A</span>'
@@ -545,6 +549,7 @@
             '<td class="cap">' + fmtBook(stock.bookValue) + '</td>' +
             '<td class="cap">' + formatCap(stock.marketCap) + '</td>' +
             '<td class="cap">' + formatVolume(stock.volume) + '</td>' +
+            '<td class="cap">' + fmtDividend(stock.dividendYield) + '</td>' +
             '<td>' + fmtAnalyst(stock.analystRating, stock.analystCount) + '</td>' +
             '<td>' + scoreBar(stock.score) + '</td>' +
           '</tr>'
@@ -567,6 +572,7 @@
                 '<th>Book value</th>' +
                 '<th>Mkt cap</th>' +
                 '<th>Volume</th>' +
+                '<th>Div yield</th>' +
                 '<th>Analyst rating</th>' +
                 '<th>Value score</th>' +
               '</tr></thead>' +

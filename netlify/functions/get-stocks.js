@@ -97,6 +97,7 @@ exports.handler = async function(event) {
         bookValue: q.bookValue || null,
         analystRating: q.averageAnalystRating || null,
         analystCount: q.numberOfAnalystOpinions || null
+        dividendYield: q.trailingAnnualDividendYield || null
       }))
 
     return {
