@@ -17,28 +17,16 @@ exports.handler = async function(event) {
     if (marketCap === 'mid')   { capMin = 2000000000;    capMax = 10000000000   }
     if (marketCap === 'large') { capMin = 10000000000;   capMax = 99999999999999 }
 
-    const defaultTickers = [
-      // Banks & Financial
-      'BAC','WFC','C','USB','FITB','RF','KEY','HBAN','CFG','MTB',
-      // Energy
-      'T','VALE','PBR','RIG','NOK','ABEV','ITUB','SLB','HAL','MRO',
-      // Technology
-      'INTC','ERIC','BB','SNAP','CSCO','HPQ','JNPR','AMD','DELL',
-      // Healthcare
-      'PFE','KVUE','OGN','WBA','BHC','VTRS','PRGO',
-      // Consumer & Airlines
-      'F','GM','AAL','UAL','DAL','CCL','NCLH','M','KSS','GPS',
-      // REITs
-      'NLY','AGNC','MPW','IVR','TWO','MFA','STWD','BXMT','RITM',
-      // Media & Telecom
-      'VZ','SIRI','PARA','WBD','LUMN',
-      // Mining & Materials
-      'GOLD','NEM','KGC','HL','PAAS','AG','EXK','TECK','FCX',
-      // Clean energy
-      'PLUG','BE','FCEL','SPWR','RUN','NOVA',
-      // Diversified
-      'GE','DVN','OVV','CIVI','SM','NOG','CHK','AR'
-    ].filter((v, i, a) => a.indexOf(v) === i)
+    // Fetch tickers from Google Sheet
+    const sheetUrl = 'https://docs.google.com/spreadsheets/d/1Sk8vQ6Hf_i64mCCYVypAWrjj7peJQ-e6Fu62kjgH__Q/edit?gid=0#gid=0&single=true&output=csv'
+    const sheetRes = await fetch(sheetUrl)
+    const csvText = await sheetRes.text()
+
+    const defaultTickers = csvText
+      .split('\n')                          // one ticker per row
+      .map(t => t.trim().toUpperCase())     // clean whitespace
+      .filter(t => t.length > 0 && t !== 'TICKER') // skip empty rows & header
+      .filter((v, i, a) => a.indexOf(v) === i)      // deduplicate
 
     const tickers = (customTickers && customTickers.length > 0)
       ? customTickers
