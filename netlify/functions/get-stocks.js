@@ -27,14 +27,13 @@ exports.handler = async function(event) {
 
       defaultTickers = csvText
         .split('\n')
-        .map(row => row.split(',')[0].trim().toUpperCase())  // take only Ticker column
-        .filter(t => t.length > 0 && t !== 'TICKER')        // skip empty rows & header
-        .filter((v, i, a) => a.indexOf(v) === i)            // deduplicate
+        .map(row => row.split(',')[0].trim().toUpperCase())
+        .filter(t => t.length > 0 && t !== 'TICKER')
+        .filter((v, i, a) => a.indexOf(v) === i)
 
       console.log('Tickers from sheet:', defaultTickers.length)
     } catch(sheetErr) {
       console.log('Sheet fetch failed, using fallback:', sheetErr.message)
-      // Fallback hardcoded list in case Google Sheet is unavailable
       defaultTickers = [
         'BAC','WFC','C','USB','FITB','RF','KEY','HBAN','CFG','MTB',
         'T','VALE','PBR','RIG','NOK','ABEV','ITUB','SLB','HAL','MRO',
@@ -53,33 +52,57 @@ exports.handler = async function(event) {
       ? customTickers
       : defaultTickers
 
-    const symbols = tickers.join(',')
+    // Split tickers into batches of 20
+    const batchSize = 20
+    const batches = []
+    for (let i = 0; i < tickers.length; i += batchSize) {
+      batches.push(tickers.slice(i, i + batchSize))
+    }
+    console.log('Total batches:', batches.length)
 
-    // Yahoo Finance v8 endpoint
-    const url = `https://query1.finance.yahoo.com/v8/finance/quote?symbols=${symbols}&fields=symbol,shortName,regularMarketPrice,marketCap,averageDailyVolume3Month,fiftyTwoWeekHigh,fiftyTwoWeekLow,trailingPE,bookValue,averageAnalystRating,numberOfAnalystOpinions,trailingAnnualDividendYield`
+    // Fetch each batch with a small delay between requests
+    const allQuotes = []
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
+      const symbols = batch.join(',')
+      const url = `https://query2.finance.yahoo.com/v8/finance/quote?symbols=${symbols}&fields=symbol,shortName,regularMarketPrice,marketCap,averageDailyVolume3Month,fiftyTwoWeekHigh,fiftyTwoWeekLow,trailingPE,bookValue,averageAnalystRating,numberOfAnalystOpinions,trailingAnnualDividendYield`
 
-    const quotesRes = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Origin': 'https://finance.yahoo.com',
-        'Referer': 'https://finance.yahoo.com/screener',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-site'
+      try {
+        const quotesRes = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Origin': 'https://finance.yahoo.com',
+            'Referer': 'https://finance.yahoo.com/screener',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'same-site'
+          }
+        })
+
+        console.log('Batch', i + 1, 'status:', quotesRes.status)
+
+        if (quotesRes.ok) {
+          const data = await quotesRes.json()
+          const quotes = data?.quoteResponse?.result || []
+          console.log('Batch', i + 1, 'quotes:', quotes.length)
+          allQuotes.push(...quotes)
+        }
+      } catch(batchErr) {
+        console.log('Batch', i + 1, 'error:', batchErr.message)
       }
-    })
 
-    console.log('Yahoo status:', quotesRes.status)
-    const data = await quotesRes.json()
-    console.log('Raw data:', JSON.stringify(data).slice(0, 300))
+      // Small delay between batches to avoid rate limiting
+      if (i < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
+    }
 
-    const quotes = data?.quoteResponse?.result || []
-    console.log('Quotes count:', quotes.length)
+    console.log('Total quotes fetched:', allQuotes.length)
 
-    const results = quotes
+    const results = allQuotes
       .filter(q => {
         if (!q) return false
         const price = q.regularMarketPrice
