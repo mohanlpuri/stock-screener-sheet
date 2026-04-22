@@ -6,10 +6,13 @@ exports.handler = async function(event) {
 
   try {
     const body = JSON.parse(event.body)
-    const { maxPrice, marketCap, minVolume, customTickers } = body
+    const { maxPrice, marketCap, minVolume, customTickers, page } = body
 
     const apiKey = process.env.TWELVE_DATA_API_KEY
     console.log('API Key present:', apiKey ? 'yes, length=' + apiKey.length : 'NO - MISSING')
+
+    const pageSize = 8
+    const currentPage = page || 1
 
     const volumeMap = { any: 0, '100k': 100000, '500k': 500000, '1m': 1000000, '5m': 5000000 }
     const minVol = volumeMap[minVolume] || 0
@@ -51,15 +54,20 @@ exports.handler = async function(event) {
       ]
     }
 
-    const tickers = (customTickers && customTickers.length > 0)
+    const allTickers = (customTickers && customTickers.length > 0)
       ? customTickers
       : defaultTickers
 
-    // Only fetch first 8 tickers (free plan limit per minute)
-    const first8 = tickers.slice(0, 8)
-    console.log('Fetching tickers:', first8.join(','))
+    const totalTickers = allTickers.length
 
-    const symbols = first8.join(',')
+    // Get current page of tickers
+    const start = (currentPage - 1) * pageSize
+    const end = start + pageSize
+    const pageTickers = allTickers.slice(start, end)
+
+    console.log('Page:', currentPage, 'Fetching tickers:', pageTickers.join(','))
+
+    const symbols = pageTickers.join(',')
     const url = `https://api.twelvedata.com/quote?symbol=${symbols}&apikey=${apiKey}`
 
     const res = await fetch(url)
@@ -69,12 +77,12 @@ exports.handler = async function(event) {
 
     // Extract quotes from response
     const allQuotes = []
-    if (first8.length === 1) {
+    if (pageTickers.length === 1) {
       if (data && data.symbol && !data.code) {
         allQuotes.push(data)
       }
     } else {
-      for (const ticker of first8) {
+      for (const ticker of pageTickers) {
         const q = data[ticker]
         if (q && q.symbol && !q.code) {
           allQuotes.push(q)
@@ -96,7 +104,6 @@ exports.handler = async function(event) {
         if (minVol > 0 && vol !== null && vol < minVol) return false
         return true
       })
-      .slice(0, 25)
       .map(q => ({
         ticker: q.symbol,
         name: q.name || q.symbol,
@@ -121,7 +128,12 @@ exports.handler = async function(event) {
         'Access-Control-Allow-Origin': '*',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ stocks: results })
+      body: JSON.stringify({
+        stocks: results,
+        totalTickers: totalTickers,
+        page: currentPage,
+        pageSize: pageSize
+      })
     }
 
   } catch(e) {
