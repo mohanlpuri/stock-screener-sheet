@@ -8,6 +8,9 @@ exports.handler = async function(event) {
     const body = JSON.parse(event.body)
     const { maxPrice, marketCap, minVolume, customTickers } = body
 
+    const apiKey = process.env.TWELVE_DATA_API_KEY
+    console.log('API Key present:', apiKey ? 'yes, length=' + apiKey.length : 'NO - MISSING')
+
     const volumeMap = { any: 0, '100k': 100000, '500k': 500000, '1m': 1000000, '5m': 5000000 }
     const minVol = volumeMap[minVolume] || 0
 
@@ -52,62 +55,41 @@ exports.handler = async function(event) {
       ? customTickers
       : defaultTickers
 
-    // Split tickers into batches of 20
-    const batchSize = 20
-    const batches = []
-    for (let i = 0; i < tickers.length; i += batchSize) {
-      batches.push(tickers.slice(i, i + batchSize))
-    }
-    console.log('Total batches:', batches.length)
+    // Only fetch first 8 tickers (free plan limit per minute)
+    const first8 = tickers.slice(0, 8)
+    console.log('Fetching tickers:', first8.join(','))
 
-    // Fetch each batch with a small delay between requests
+    const symbols = first8.join(',')
+    const url = `https://api.twelvedata.com/quote?symbol=${symbols}&apikey=${apiKey}`
+
+    const res = await fetch(url)
+    console.log('Status:', res.status)
+
+    const data = await res.json()
+
+    // Extract quotes from response
     const allQuotes = []
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i]
-      const symbols = batch.join(',')
-      const url = `https://query2.finance.yahoo.com/v8/finance/quote?symbols=${symbols}&fields=symbol,shortName,regularMarketPrice,marketCap,averageDailyVolume3Month,fiftyTwoWeekHigh,fiftyTwoWeekLow,trailingPE,bookValue,averageAnalystRating,numberOfAnalystOpinions,trailingAnnualDividendYield`
-
-      try {
-        const quotesRes = await fetch(url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Origin': 'https://finance.yahoo.com',
-            'Referer': 'https://finance.yahoo.com/screener',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'same-site'
-          }
-        })
-
-        console.log('Batch', i + 1, 'status:', quotesRes.status)
-
-        if (quotesRes.ok) {
-          const data = await quotesRes.json()
-          const quotes = data?.quoteResponse?.result || []
-          console.log('Batch', i + 1, 'quotes:', quotes.length)
-          allQuotes.push(...quotes)
-        }
-      } catch(batchErr) {
-        console.log('Batch', i + 1, 'error:', batchErr.message)
+    if (first8.length === 1) {
+      if (data && data.symbol && !data.code) {
+        allQuotes.push(data)
       }
-
-      // Small delay between batches to avoid rate limiting
-      if (i < batches.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500))
+    } else {
+      for (const ticker of first8) {
+        const q = data[ticker]
+        if (q && q.symbol && !q.code) {
+          allQuotes.push(q)
+        }
       }
     }
 
-    console.log('Total quotes fetched:', allQuotes.length)
+    console.log('Quotes fetched:', allQuotes.length)
 
     const results = allQuotes
       .filter(q => {
         if (!q) return false
-        const price = q.regularMarketPrice
-        const cap = q.marketCap || 0
-        const vol = q.averageDailyVolume3Month || null
+        const price = parseFloat(q.close)
+        const cap = parseFloat(q.market_cap) || 0
+        const vol = parseFloat(q.average_volume) || null
         if (!price || price <= 0) return false
         if (price > maxPrice) return false
         if (cap < capMin || cap > capMax) return false
@@ -117,18 +99,18 @@ exports.handler = async function(event) {
       .slice(0, 25)
       .map(q => ({
         ticker: q.symbol,
-        name: q.shortName || q.symbol,
-        price: q.regularMarketPrice,
-        marketCap: q.marketCap,
-        volume: q.averageDailyVolume3Month || 0,
+        name: q.name || q.symbol,
+        price: parseFloat(q.close),
+        marketCap: parseFloat(q.market_cap) || null,
+        volume: parseFloat(q.average_volume) || 0,
         sector: q.sector || 'Unknown',
-        week52High: q.fiftyTwoWeekHigh || null,
-        week52Low: q.fiftyTwoWeekLow || null,
-        peRatio: q.trailingPE || null,
-        bookValue: q.bookValue || null,
-        analystRating: q.averageAnalystRating || null,
-        analystCount: q.numberOfAnalystOpinions || null,
-        dividendYield: q.trailingAnnualDividendYield || null
+        week52High: q.fifty_two_week ? parseFloat(q.fifty_two_week.high) : null,
+        week52Low: q.fifty_two_week ? parseFloat(q.fifty_two_week.low) : null,
+        peRatio: parseFloat(q.pe) || null,
+        bookValue: null,
+        analystRating: null,
+        analystCount: null,
+        dividendYield: null
       }))
 
     console.log('Results count:', results.length)
