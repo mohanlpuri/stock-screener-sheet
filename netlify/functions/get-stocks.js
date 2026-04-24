@@ -8,34 +8,34 @@ exports.handler = async function(event) {
     const body = JSON.parse(event.body)
     const { maxPrice, marketCap, minVolume, customTickers, page } = body
 
-    const apiKey = process.env.TWELVE_DATA_API_KEY
-    console.log('API Key present:', apiKey ? 'yes, length=' + apiKey.length : 'NO - MISSING')
+    const FINNHUB_KEY = process.env.FINNHUB_API_KEY
+    const currentPage = page || 0   // 0-based page index
+    const PAGE_SIZE   = 8
 
-    const pageSize = 8
-    const currentPage = page || 1
-
+    // Volume minimum map
     const volumeMap = { any: 0, '100k': 100000, '500k': 500000, '1m': 1000000, '5m': 5000000 }
     const minVol = volumeMap[minVolume] || 0
 
-    let capMin = 0
-    let capMax = 99999999999999
-    if (marketCap === 'small') { capMin = 0;           capMax = 2000000000     }
-    if (marketCap === 'mid')   { capMin = 2000000000;  capMax = 10000000000    }
-    if (marketCap === 'large') { capMin = 10000000000; capMax = 99999999999999 }
+    // Market cap range (in dollars — Finnhub returns marketCapitalization in millions)
+    let capMinM = 0
+    let capMaxM = 99999999
+    if (marketCap === 'small') { capMinM = 0;     capMaxM = 2000    }   // < $2B
+    if (marketCap === 'mid')   { capMinM = 2000;  capMaxM = 10000   }   // $2B - $10B
+    if (marketCap === 'large') { capMinM = 10000; capMaxM = 99999999 }  // > $10B
 
-    // Fetch tickers from Google Sheet
+    // --- Load tickers from Google Sheet (or fallback hardcoded list) ---
     let defaultTickers = []
     try {
       const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR9MsSJjs2TpsnLkaaMzEQuEzjsDy6bxBiGVzEbuEcbulLBMTS7MU0y76GR_9yf5NcVbM7DlsilScWX/pub?gid=778242031&single=true&output=csv'
       const sheetRes = await fetch(sheetUrl)
-      const csvText = await sheetRes.text()
+      const csvText  = await sheetRes.text()
       console.log('Sheet status:', sheetRes.status)
 
       defaultTickers = csvText
         .split('\n')
         .map(row => row.split(',')[0].trim().toUpperCase())
         .filter(t => t.length > 0 && t !== 'TICKER')
-        .filter((v, i, a) => a.indexOf(v) === i)
+        .filter((v, i, a) => a.indexOf(v) === i)   // deduplicate
 
       console.log('Tickers from sheet:', defaultTickers.length)
     } catch(sheetErr) {
@@ -54,73 +54,104 @@ exports.handler = async function(event) {
       ]
     }
 
-    const allTickers = (customTickers && customTickers.length > 0)
-      ? customTickers
-      : defaultTickers
+    const allTickers  = (customTickers && customTickers.length > 0) ? customTickers : defaultTickers
+    const totalPages  = Math.ceil(allTickers.length / PAGE_SIZE)
+    const start       = currentPage * PAGE_SIZE
+    const pageTickers = allTickers.slice(start, start + PAGE_SIZE)
 
-    const totalTickers = allTickers.length
+    console.log(`Page ${currentPage + 1}/${totalPages}, tickers: ${pageTickers.join(',')}`)
 
-    // Get current page of tickers
-    const start = (currentPage - 1) * pageSize
-    const end = start + pageSize
-    const pageTickers = allTickers.slice(start, end)
+    // --- Fetch Finnhub data for each ticker (same 3 endpoints as StockValueSense) ---
+    const results = await Promise.all(
+      pageTickers.map(async (ticker) => {
+        try {
+          const base = 'https://finnhub.io/api/v1'
 
-    console.log('Page:', currentPage, 'Fetching tickers:', pageTickers.join(','))
+          // Same 3 calls as StockValueSense stock-lookup.js
+          const [quoteRes, metricsRes, profileRes, recRes] = await Promise.all([
+            fetch(`${base}/quote?symbol=${ticker}&token=${FINNHUB_KEY}`),
+            fetch(`${base}/stock/metric?symbol=${ticker}&metric=all&token=${FINNHUB_KEY}`),
+            fetch(`${base}/stock/profile2?symbol=${ticker}&token=${FINNHUB_KEY}`),
+            fetch(`${base}/stock/recommendation?symbol=${ticker}&token=${FINNHUB_KEY}`)
+          ])
 
-    const symbols = pageTickers.join(',')
-    const url = `https://api.twelvedata.com/quote?symbol=${symbols}&apikey=${apiKey}`
+          console.log(`Finnhub ${ticker} quote: ${quoteRes.status}`)
 
-    const res = await fetch(url)
-    console.log('Status:', res.status)
+          const [quote, metricsData, profile, recData] = await Promise.all([
+            quoteRes.json(),
+            metricsRes.json(),
+            profileRes.json(),
+            recRes.json()
+          ])
 
-    const data = await res.json()
+          const metrics = metricsData.metric || {}
 
-    // Extract quotes from response
-    const allQuotes = []
-    if (pageTickers.length === 1) {
-      if (data && data.symbol && !data.code) {
-        allQuotes.push(data)
-      }
-    } else {
-      for (const ticker of pageTickers) {
-        const q = data[ticker]
-        if (q && q.symbol && !q.code) {
-          allQuotes.push(q)
+          // Price — same field as StockValueSense: quote.c
+          const price = quote.c || quote.pc || 0
+
+          if (!price || price <= 0) {
+            console.log(`${ticker}: no price, skipping`)
+            return null
+          }
+
+          // Market cap (Finnhub returns in millions)
+          const marketCapM = profile.marketCapitalization || 0
+          const volume     = quote.v || 0
+
+          // Apply filters
+          if (price > maxPrice) return null
+          if (marketCapM > 0 && (marketCapM < capMinM || marketCapM > capMaxM)) return null
+          if (minVol > 0 && volume > 0 && volume < minVol) return null
+
+          // --- Same fields as StockValueSense ---
+          const week52High = metrics['52WeekHigh'] || null
+          const week52Low  = metrics['52WeekLow']  || null
+          const peRatio    = metrics['peBasicExclExtraTTM'] || metrics['peAnnual'] || null
+          const bookValue  = metrics['bookValuePerShareAnnual'] || metrics['bookValuePerShareQuarterly'] || null
+          const pbRatio    = (price && bookValue && bookValue > 0) ? price / bookValue : null
+          const divYield   = metrics['currentDividendYieldTTM'] || null
+
+          // Analyst rating — same logic as StockValueSense
+          let analystRating = null
+          let analystCount  = null
+          if (Array.isArray(recData) && recData.length > 0) {
+            const latest     = recData[0]
+            const totalCount = (latest.strongBuy || 0) + (latest.buy || 0) + (latest.hold || 0) + (latest.sell || 0) + (latest.strongSell || 0)
+            const buyScore   = ((latest.strongBuy || 0) * 2 + (latest.buy || 0)) / Math.max(totalCount, 1)
+            analystCount     = totalCount
+
+            if (buyScore >= 1.2)     analystRating = '1 - Strong Buy'
+            else if (buyScore >= 0.8) analystRating = '2 - Buy'
+            else if (buyScore >= 0.4) analystRating = '3 - Hold'
+            else                      analystRating = '4 - Sell'
+          }
+
+          return {
+            ticker:        ticker,
+            name:          profile.name || ticker,
+            price:         price,
+            marketCap:     marketCapM * 1000000,   // convert millions → dollars for display
+            volume:        volume,
+            sector:        profile.finnhubIndustry || 'Unknown',
+            week52High:    week52High,
+            week52Low:     week52Low,
+            peRatio:       peRatio,
+            bookValue:     bookValue,
+            pbRatio:       pbRatio,
+            analystRating: analystRating,
+            analystCount:  analystCount,
+            dividendYield: divYield
+          }
+
+        } catch(e) {
+          console.log(`Error fetching ${ticker}:`, e.message)
+          return null
         }
-      }
-    }
-
-    console.log('Quotes fetched:', allQuotes.length)
-
-    const results = allQuotes
-      .filter(q => {
-        if (!q) return false
-        const price = parseFloat(q.close)
-        const cap = parseFloat(q.market_cap) || 0
-        const vol = parseFloat(q.average_volume) || null
-        if (!price || price <= 0) return false
-        if (price > maxPrice) return false
-        if (cap < capMin || cap > capMax) return false
-        if (minVol > 0 && vol !== null && vol < minVol) return false
-        return true
       })
-      .map(q => ({
-        ticker: q.symbol,
-        name: q.name || q.symbol,
-        price: parseFloat(q.close),
-        marketCap: parseFloat(q.market_cap) || null,
-        volume: parseFloat(q.average_volume) || 0,
-        sector: q.sector || 'Unknown',
-        week52High: q.fifty_two_week ? parseFloat(q.fifty_two_week.high) : null,
-        week52Low: q.fifty_two_week ? parseFloat(q.fifty_two_week.low) : null,
-        peRatio: parseFloat(q.pe) || null,
-        bookValue: null,
-        analystRating: null,
-        analystCount: null,
-        dividendYield: null
-      }))
+    )
 
-    console.log('Results count:', results.length)
+    const filteredResults = results.filter(Boolean)
+    console.log(`Results: ${filteredResults.length} stocks on page ${currentPage + 1}`)
 
     return {
       statusCode: 200,
@@ -129,10 +160,10 @@ exports.handler = async function(event) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        stocks: results,
-        totalTickers: totalTickers,
-        page: currentPage,
-        pageSize: pageSize
+        stocks:       filteredResults,
+        page:         currentPage,
+        totalPages:   totalPages,
+        totalTickers: allTickers.length
       })
     }
 
